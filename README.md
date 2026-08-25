@@ -6,7 +6,7 @@ It lets multiple web applications share a single redirect URI on one Entra ID ap
 
 When Microsoft posts the result back to `/return`, the wrapper restores the original state and posts the auth response back to the application callback URL.
 
-This is useful when you have several deployments or several related apps that need to use a shared Entra ID app registration, but you do not want to add every application callback URL to the registration.
+This is useful when you have several deployments, several related apps, or multiple instances of the same application that need to use a shared Entra ID app registration, but you do not want to add every application callback URL to the registration. For example, this can help with dev environments or applications running in a Kubernetes cluster.
 
 ## Supported flows
 
@@ -81,7 +81,7 @@ There is no runtime configuration at the moment. The service listens on port `80
 
 The external hostname is inferred from request headers in this order:
 
-1. `X-Forwarded-Host`
+1. `X-Forwarded-For`
 2. `X-Original-Host`
 3. `Host`
 
@@ -185,6 +185,10 @@ Or build the container image locally:
 docker build -t ms-identity-redirect-handler .
 docker run --rm -p 8000:8000 ms-identity-redirect-handler
 ```
+
+## Licensing
+
+This project is free to use, modify or redistribute for any purpose.
 
 ## Notes
 
