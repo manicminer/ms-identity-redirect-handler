@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -90,9 +91,10 @@ func main() {
 }
 
 func handleError(w http.ResponseWriter, statusCode int, errorTitle, errorMessage string) {
-	out := fmt.Sprintf(errorTemplate, errorTitle, errorMessage)
+	out := strings.ReplaceAll(errorTemplate, "%[1]s", html.EscapeString(errorTitle))
+	out = strings.ReplaceAll(out, "%[2]s", html.EscapeString(errorMessage))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusInternalServerError)
+	w.WriteHeader(statusCode)
 	w.Write([]byte(out))
 }
 
@@ -165,6 +167,7 @@ func returnHandler(w http.ResponseWriter, r *http.Request) {
 	if errorCode := r.Form.Get("error"); errorCode != "" {
 		errorDescription := r.Form.Get("error_description")
 		handleError(w, http.StatusInternalServerError, errorCode, errorDescription)
+		return
 	}
 
 	state := &wrappedState{}
