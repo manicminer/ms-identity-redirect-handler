@@ -82,7 +82,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	var hostname *string
 	if v := os.Getenv("HOST"); v != "" {
 		hostname = &v
-	} else if v := r.Header.Get("X-Forwarded-Host"); v != "" {
+	} else if v := r.Header.Get("X-Forwarded-For"); v != "" {
 		hostname = &v
 	} else if v := r.Header.Get("X-Original-Host"); v != "" {
 		hostname = &v
