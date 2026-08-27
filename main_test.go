@@ -107,6 +107,77 @@ func TestLoginHandlerRedirectsToB2CAuthorizeEndpoint(t *testing.T) {
 	}
 }
 
+func TestLoginHandlerDeterminesReturnHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		envHost  string
+		headers  map[string]string
+		reqHost  string
+		wantHost string
+	}{
+		{
+			name:     "uses HOST environment variable first",
+			envHost:  "env.identity.example.com",
+			headers:  map[string]string{"X-Forwarded-For": "forwarded.identity.example.com", "X-Original-Host": "original.identity.example.com"},
+			reqHost:  "request.identity.example.com",
+			wantHost: "env.identity.example.com",
+		},
+		{
+			name:     "uses X-Forwarded-For header",
+			headers:  map[string]string{"X-Forwarded-For": "forwarded.identity.example.com", "X-Original-Host": "original.identity.example.com"},
+			reqHost:  "request.identity.example.com",
+			wantHost: "forwarded.identity.example.com",
+		},
+		{
+			name:     "uses X-Original-Host header when forwarded header is missing",
+			headers:  map[string]string{"X-Original-Host": "original.identity.example.com"},
+			reqHost:  "request.identity.example.com",
+			wantHost: "original.identity.example.com",
+		},
+		{
+			name:     "uses request Host when proxy headers are missing",
+			reqHost:  "request.identity.example.com",
+			wantHost: "request.identity.example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOST", tt.envHost)
+
+			query := url.Values{}
+			query.Set("login_url", "https://login.microsoftonline.com/common/oauth2/v2.0/authorize")
+			query.Set("client_id", "00000000-0000-0000-0000-000000000000")
+			query.Set("response_type", "code")
+			query.Set("response_mode", "form_post")
+			query.Set("scope", "openid profile email")
+			query.Set("redirect_uri", "https://app1.example.com/auth/microsoft/callback")
+			query.Set("state", "app1-generated-state")
+			query.Set("nonce", "app1-generated-nonce")
+
+			req := httptest.NewRequest(http.MethodGet, "/login?"+query.Encode(), nil)
+			req.Host = tt.reqHost
+			for name, value := range tt.headers {
+				req.Header.Set(name, value)
+			}
+			rr := httptest.NewRecorder()
+
+			loginHandler(rr, req)
+
+			if rr.Code != http.StatusFound {
+				t.Fatalf("expected status %d, got %d", http.StatusFound, rr.Code)
+			}
+
+			location := rr.Header().Get("Location")
+			redirectURL, err := url.Parse(location)
+			if err != nil {
+				t.Fatalf("parsing redirect location %q: %v", location, err)
+			}
+			assertQueryParam(t, redirectURL.Query(), "redirect_uri", "https://"+tt.wantHost+"/return")
+		})
+	}
+}
+
 func TestLoginHandlerRejectsUnsupportedMethod(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)
 	rr := httptest.NewRecorder()
