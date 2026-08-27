@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"syscall"
 	"time"
@@ -33,6 +34,21 @@ func (h hiddenFields) String() string {
 		out += fmt.Sprintf(`<input type="hidden" name="%s" value="%s">`, html.EscapeString(field), html.EscapeString(value))
 	}
 	return out
+}
+
+var errorTemplate, returnTemplate string
+
+func init() {
+	if content, err := os.ReadFile(filepath.Join("templates", "error.html")); err != nil {
+		log.Fatalf("Error reading template: %v", err)
+	} else {
+		errorTemplate = string(content)
+	}
+	if content, err := os.ReadFile(filepath.Join("templates", "return.html")); err != nil {
+		log.Fatalf("Error reading template: %v", err)
+	} else {
+		returnTemplate = string(content)
+	}
 }
 
 func main() {
@@ -73,9 +89,16 @@ func main() {
 	os.Exit(0)
 }
 
+func handleError(w http.ResponseWriter, statusCode int, errorTitle, errorMessage string) {
+	out := fmt.Sprintf(errorTemplate, errorTitle, errorMessage)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	w.Write([]byte(out))
+}
+
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		handleError(w, http.StatusMethodNotAllowed, "Invalid Request", "Method not allowed")
 		return
 	}
 
@@ -91,13 +114,13 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hostname == nil || *hostname == "" {
-		http.Error(w, "Unable to determine hostname from HTTP headers", http.StatusBadRequest)
+		handleError(w, http.StatusBadRequest, "Invalid Request", "Unable to determine hostname from HTTP headers")
 		return
 	}
 
 	loginUrl, err := url.Parse(r.URL.Query().Get("login_url"))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("parsing `login_url`: %s", err.Error()), http.StatusInternalServerError)
+		handleError(w, http.StatusInternalServerError, "Could not parse `login_url`", err.Error())
 		return
 	}
 
@@ -119,7 +142,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	stateVal, err := json.Marshal(state)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("marshalling state: %v", err), http.StatusInternalServerError)
+		handleError(w, http.StatusInternalServerError, "Marshalling state", err.Error())
 		return
 	}
 
@@ -132,13 +155,18 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 func returnHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		handleError(w, http.StatusMethodNotAllowed, "Invalid Request", "Method not allowed")
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, fmt.Sprintf("parsing form: %v", err), http.StatusInternalServerError)
+		handleError(w, http.StatusInternalServerError, "Could not parse form data", err.Error())
 		return
+	}
+
+	if errorCode := r.Form.Get("error"); errorCode != "" {
+		errorDescription := r.Form.Get("error_description")
+		handleError(w, http.StatusInternalServerError, errorCode, errorDescription)
 	}
 
 	state := &wrappedState{}
@@ -155,29 +183,7 @@ func returnHandler(w http.ResponseWriter, r *http.Request) {
 		fields[field] = r.Form.Get(field)
 	}
 
-	out := fmt.Sprintf(`
-	<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<title>Login Successful</title>
-		<script type="text/javascript">
-			window.onload = function() {
-				document.getElementById('muxForm').submit();
-			};
-		</script>
-	</head>
-	<body>
-		<form id="muxForm" action="%[1]s" method="post">
-			<input type="hidden" name="state" value="%[2]s">
-			%[3]s
-			<noscript>
-				<h2>Login Successful</h2>
-				<input type="submit" value="Continue">
-			</noscript>
-		</form>
-	</body>
-	</html>`, state.OriginalUrl, state.OriginalState, fields)
-
+	out := fmt.Sprintf(returnTemplate, state.OriginalUrl, state.OriginalState, fields)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(out))
 }

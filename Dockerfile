@@ -7,4 +7,5 @@ RUN CGO_ENABLED=0 go build -ldflags="-X 'main.version=${VERSION}'" -o ms-identit
 
 FROM scratch
 COPY --from=build --chmod=755 /app/ms-identity-redirect-handler /
+ADD templates/ /templates
 ENTRYPOINT ["/ms-identity-redirect-handler"]
